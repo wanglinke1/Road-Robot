@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Makers</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        p {
+            color: #555;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>欢迎来到树莓派搭建的网页</h1>
+    <p>点击按钮向串口发送数据：</p>
+
+    <!-- 添加按钮 -->
+    <button onclick="sendDataToSerial('Command1')">发送命令 1</button>
+    <button onclick="sendDataToSerial('Command2')">发送命令 2</button>
+    <button onclick="sendDataToSerial('Command3')">发送命令 3</button>
+
+    <script>
+        function sendDataToSerial(command) {
+            // 使用 Fetch API 将命令发送到后端
+            fetch('/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message); // 显示后端返回的消息
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+    </script>
+</body>
+</html>

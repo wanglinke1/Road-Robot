@@ -27,7 +27,7 @@ class MoveMode(enum.IntEnum):
     X_move = 1
     Y_move = 2
     rotate = 3
-    coodrinate = 4
+    coordinate = 4
 
 if __name__ == '__main__':
     print("当前工作目录:", os.getcwd())

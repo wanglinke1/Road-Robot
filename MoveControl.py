@@ -147,7 +147,7 @@ class MoveControl:
             if rotation_angle is None:
                 raise ValueError
 
-        elif mode in [MoveMode.coodrinate]:
+        elif mode in [MoveMode.coordinate]:
             if pre_x is None:
                 raise ValueError
 
@@ -170,7 +170,7 @@ class MoveControl:
             buffer = [0xFF, mode.value, 0x00, 0x00, rotation_angle_, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE]
             log_msg = f'动作模式为旋转，使用度作为单位，原始输入为{rotation_angle_}度'
 
-        elif mode in [MoveMode.coodrinate]:
+        elif mode in [MoveMode.coordinate]:
             pre_x_ = int(pre_x & 0xFFFF)
             pre_y_ = int(pre_y & 0xFFFF)
             tar_x_ = int(tar_x & 0xFFFF)
@@ -253,7 +253,7 @@ class MoveControl:
         tar_y:
             目标小车y坐标,单位为mm
         """
-        self.__send_serial_msg(mode=MoveMode.coodrinate, pre_x=pre_x, pre_y=pre_y, tar_x=tar_x, tar_y=tar_y)
+        self.__send_serial_msg(mode=MoveMode.coordinate, pre_x=pre_x, pre_y=pre_y, tar_x=tar_x, tar_y=tar_y)
         my_logger.info(f"当前x坐标为:{pre_x}mm")
         my_logger.info(f"当前y坐标为:{pre_y}mm")
         my_logger.info(f"目标x坐标为:{tar_x}mm")

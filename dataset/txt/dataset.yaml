@@ -1,0 +1,10 @@
+path: /home/newPSSD/reid/ultralytics-main/dataset/
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: Repair
+  1: D00
+  2: D10
+  3: D20
+  4: D40

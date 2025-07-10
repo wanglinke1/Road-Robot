@@ -20,14 +20,9 @@ class MoveMode(enum.IntEnum):
     该类用于封装小车运动及控制模式
 
     枚举成员:
-        X_move: 前后走
-        Y_move: 左右走
-        rotate: 自转
+        - SPEED: 小车以速度模式运动
     """
-    X_move = 1
-    Y_move = 2
-    rotate = 3
-    coordinate = 4
+    SPEED = 1
 
 if __name__ == '__main__':
     print("当前工作目录:", os.getcwd())

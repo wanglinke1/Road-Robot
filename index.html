@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小车控制界面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+
+        .control-panel {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: 1fr 1fr 1fr;
+        gap: 20px;              /* 设置按钮之间的间距 */
+        position: absolute;     /* 绝对定位 */
+        bottom: 20px;           /* 距离底部 20px */
+        left: 20px;             /* 距离左侧 20px */
+        }
+
+        button {
+        padding: 20px;          /* 增加按钮的内边距 */
+        font-size: 20px;        /* 增大字体大小 */
+        cursor: pointer;        /* 鼠标悬停时显示手型 */
+        border: none;           /* 去掉边框 */
+        border-radius: 5px;     /* 设置圆角 */
+        background-color: #4CAF50;  /* 设置按钮背景颜色 */
+        color: white;       /* 设置字体颜色 */
+        transition: background-color 0.3s;  /* 设置背景颜色过渡效果 */
+        width: 120px;           /* 设置按钮宽度 */
+        height: 100px;           /* 设置按钮高度 */
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        select {
+            margin-top: 20px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        #video-container {
+            position: absolute; /* 绝对定位 */
+            top: 100px;          /* 距离顶部 20px */
+            right: 100px;        /* 距离右侧 20px */
+            width: 1000px;       /* 设置宽度 */
+            height: 750px;      /* 设置高度 */
+            background-color: black; /* 背景颜色 */
+        }
+
+        #video-container img {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- 串口选择 -->
+    <select id="port-select">
+        <option value="">请选择单片机串口</option>
+    </select>
+    <button onclick="initializeControl()">初始化</button>
+
+    <!-- 视频流显示 -->
+    <div id="video-container">
+        <img src="http://192.168.137.173:5000/video_feed" alt="摄像头画面">
+    </div>
+    
+    <!-- 控制按钮 -->
+    <div class="control-panel">
+        <button onclick="sendDataToSerial('rotate_left')">左转</button>
+        <button onclick="sendDataToSerial('forward')">前进</button>
+        <button onclick="sendDataToSerial('rotate_right')">右转</button>
+        <button onclick="sendDataToSerial('left')">左移</button>
+        <div></div>
+        <button onclick="sendDataToSerial('right')">右移</button>
+        <div></div>
+        <button onclick="sendDataToSerial('backward')">后退</button>
+    </div>
+
+    <script>
+        // 获取可用串口列表
+        function fetchPorts() {
+            fetch('http://192.168.137.173:5000/list_ports')
+                .then(response => response.json())
+                .then(data => {
+                    const portSelect = document.getElementById('port-select');
+                    portSelect.innerHTML = '<option value="">请选择底盘串口</option>';
+                    data.forEach(port => {
+                        const option = document.createElement('option');
+                        option.value = port.index;
+                        option.textContent = `${port.index}: ${port.port} (${port.description})`;
+                        portSelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('获取串口失败:', error));
+        }
+
+        // 初始化 MoveControl
+        function initializeControl() {
+            const portSelect = document.getElementById('port-select');
+            const portIndex = portSelect.value;
+
+            if (!portIndex) {
+                alert('请选择一个串口');
+                return;
+            }
+
+            fetch('http://192.168.137.173:5000/init', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ port_index: parseInt(portIndex), baudrate: 115200 })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('初始化失败: ' + data.error);
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => console.error('初始化失败:', error));
+        }
+
+        // 发送控制命令
+        function sendDataToSerial(command) {
+            fetch('http://192.168.137.173:5000/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ command: command })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('错误: ' + data.error);
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => console.error('发送命令失败:', error));
+        }
+
+        // 页面加载时获取串口列表
+        window.onload = fetchPorts;
+    </script>
+</body>
+</html>

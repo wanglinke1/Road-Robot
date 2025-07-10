@@ -10,7 +10,6 @@
 import time
 import serial
 import serial.tools.list_ports
-from Coordinate import Coordinate
 
 from Config import my_logger, MoveMode
 
@@ -82,11 +81,8 @@ class MoveControl:
             raise RuntimeError("串口未能成功初始化")
 
         self.buffer_format = [0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE]
-        # 数据包格式：         包头、模式、 高八、低八、 旋转角、空、  空、  空、   空、   空、 包尾
-        # x坐标移动            0xFF 0x01 x_high x_low  0x00  0x00  0x00  0x00  0x00  0x00  0xFE
-        # y坐标移动            0xFF 0x02 y_high y_low  0x00  0x00  0x00  0x00  0x00  0x00  0xFE
-        # 旋转运动             0xFF 0x03   0x00  0x00 angle  0x00  0x00  0x00  0x00  0x00  0xFE
-        # 给定坐标运动         0xFF  0x04  pre_x pre_x pre_y pre_y tar_x tar_x tar_y tar_y 0xFE
+        # 数据包格式：         包头、模式、 高八、低八、 高八、 低八、 高八、低八、高八、 低八、 包尾
+        # SPEED移动          0xFF 0x01 1_high 1_low 2_high 2_low 3_high 3_low 4_high 4_low 0xFE
     def __wait_for_action_done(self) -> None:
         """
         上位机向下位机发送动作指令后，下位机应该在动作执行结束后向上位机反馈动作结束的命令
@@ -103,162 +99,60 @@ class MoveControl:
                     self._serial.read(1)
                     self._serial.reset_input_buffer()
                     break
-
-    def wait_for_start_cmd(self) -> None:
+    
+    def __send_serial_msg(self, mode: MoveMode, moter_1: int = None, moter_2: int = None, moter_3: int = None, moter_4: int = None) -> None:
         """
-        等待下位机的开启指令，指令设置为[0xFF, 0x10, 0xFE]
-
-        Returns:
-            None: 函数结束代表受到了指令
-        """
-        while True:
-            head = ord(self._serial.read(1))
-            if head == 0xFF:
-                data = ord(self._serial.read(1))
-                if data == 0x10:
-                    self._serial.read(1)
-                    self._serial.reset_input_buffer()
-                    my_logger.info(f"接收到了下位机的启动消息！")
-                    break
-
-    def __send_serial_msg(self, mode: MoveMode, distance: float = None, rotation_angle: int = None, pre_x: int = None, pre_y: int = None, tar_x: int = None, tar_y: int = None) -> None:
-        """
-        发送串口指令给下位机，在被调用时会先对输入的数据进行检查；发送完指令后调用self.__wait_for_action_done()等待下位机反馈
+        发送串口指令给下位机，在被调用时会先对输入的数据进行检查
 
         Args:
             mode (MoveMode): 运动模式，详情见Config.py
-            distance (float): 运动距离，单位为cm
-            rotation_angle (int): 旋转角度，单位为度
+            moter_1, moter_2, moter_3, moter_4: 电机速度，范围[-32768, 32767]
         Returns:
-            None: 函数结束代表发送成功并且收到了下位机的执行结束消息
+            None: 函数结束代表发送成功
         """
         buffer = []
         log_msg = f''
 
         # 对输入数据进行检查
-        if mode in [MoveMode.X_move, MoveMode.Y_move]:
-            if distance is None:
-                raise ValueError
-            if -327.68 <= distance <= 327.67:
-                pass
-            else:
-                my_logger.warning(f"距离设置范围过大，目前支持[-327.68, 327.67] m。截取距离的低十六位")
+        if mode == MoveMode.SPEED:
+            # 检查电机参数
+            for idx, moter in enumerate([moter_1, moter_2, moter_3, moter_4], start=1):
+                if moter is None:
+                    raise ValueError(f"电机{idx}速度未指定")
+                if not (-32768 <= moter <= 32767):
+                    my_logger.warning(f"电机{idx}速度{moter}超出范围[-32768, 32767]，将截取低16位")
 
-        elif mode in [MoveMode.rotate]:
-            if rotation_angle is None:
-                raise ValueError
-
-        elif mode in [MoveMode.coordinate]:
-            if pre_x is None:
-                raise ValueError
-
-        else:
-            my_logger.error(f"无法识别的Move模式：{mode}")
-
-        # 进行数据处理
-        if mode in [MoveMode.X_move, MoveMode.Y_move]:
-
-            dis_cm = int(distance * 100)
-            high_byte: int = (dis_cm & 0xFF00) >> 8
-            low_byte = dis_cm & 0x00FF
-
-            buffer = [0xFF, mode.value, high_byte, low_byte, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE]
-
-            log_msg = f'动作模式为{mode.name}，使用米作为单位，原始移动距离为{distance}m。'
-
-        elif mode in [MoveMode.rotate]:
-            rotation_angle_ = int(rotation_angle & 0xFF)
-            buffer = [0xFF, mode.value, 0x00, 0x00, rotation_angle_, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE]
-            log_msg = f'动作模式为旋转，使用度作为单位，原始输入为{rotation_angle_}度'
-
-        elif mode in [MoveMode.coordinate]:
-            pre_x_ = int(pre_x & 0xFFFF)
-            pre_y_ = int(pre_y & 0xFFFF)
-            tar_x_ = int(tar_x & 0xFFFF)
-            tar_y_ = int(tar_y & 0xFFFF)
+            moter_1 = int(moter_1 & 0xFFFF)
+            moter_2 = int(moter_2 & 0xFFFF)
+            moter_3 = int(moter_3 & 0xFFFF)
+            moter_4 = int(moter_4 & 0xFFFF)
 
             buffer = [0xFF, mode.value,
-                      (pre_x_ & 0xFF00) >> 8, pre_x_ & 0x00FF,
-                      (pre_y_ & 0xFF00) >> 8, pre_y_ & 0x00FF,
-                      (tar_x_ & 0xFF00) >> 8, tar_x_ & 0x00FF,
-                      (tar_y_ & 0xFF00) >> 8, tar_y_ & 0x00FF,
+                      (moter_1 & 0xFF00) >> 8, moter_1 & 0x00FF,
+                      (moter_2 & 0xFF00) >> 8, moter_2 & 0x00FF,
+                      (moter_3 & 0xFF00) >> 8, moter_3 & 0x00FF,
+                      (moter_4 & 0xFF00) >> 8, moter_4 & 0x00FF,
                       0xFE]
-
-            log_msg = f'动作模式为坐标移动，原始输入坐标为({pre_x}, {pre_y})到({tar_x}, {tar_y})'
-
+            log_msg = f'动作模式为{mode.name}，电机速度分别为: {moter_1}, {moter_2}, {moter_3}, {moter_4}'
         else:
+            my_logger.error(f"无法识别的Move模式：{mode}")
             raise ValueError(f'无法识别的模式{mode}')
 
-        if mode:
-            send_num = self._serial.write(bytes(buffer))
-            my_logger.debug(f"向下位机发送了{send_num}个字节的数据，数据内容为{buffer}。" + log_msg)
-            self.__wait_for_action_done()
-            my_logger.info(f"接收到串口消息，下位机动作执行完毕")
+        send_num = self._serial.write(bytes(buffer))
+        my_logger.info(f"向下位机发送了{send_num}个字节的数据，数据内容为{buffer}。" + log_msg)
 
-    def move_X(self, distance: float) -> None:
+
+    def SPEED(self, moter_1: int, moter_2: int, moter_3: int, moter_4: int) -> None:
         """
-        控制小车前后方向上的移动
+        控制小车的速度
 
         Args:
-            distance: 移动距离，单位为米，范围为[-327, 327]m
-        Returns:
-            None: 延时程序，函数返回时代表动作完成
+            moter_1: 电机1的速度，范围[-32768, 32767]
+            moter_2: 电机2的速度，范围[-32768, 32767]
+            moter_3: 电机3的速度，范围[-32768, 32767]
+            moter_4: 电机4的速度，范围[-32768, 32767]
         """
-        self.__send_serial_msg(mode=MoveMode.X_move, distance=distance)
-        if distance >= 0:
-            my_logger.info(f"向前{distance}m")
-        else:
-            my_logger.info(f"后退{distance}m")
-        
-
-    def move_Y(self, distance: float) -> None:
-        """
-        控制小车左右方向上的移动
-
-        Args:
-            distance: 移动距离，单位为米，范围为[-327, 327]m
-        Returns:
-            None: 延时程序，函数返回时代表动作完成
-        """
-        self.__send_serial_msg(mode=MoveMode.Y_move, distance=distance)
-        if distance >= 0:
-            my_logger.info(f"向左{distance}m")
-        else:
-            my_logger.info(f"向右{distance}m")
-
-    def rotate(self, angle: int) -> None:
-        """
-        控制小车底盘旋转
-
-        Args:
-            angle (int): 角度值，单位为度，范围为[-360, 360]，逆时针方向为正
-        Returns:
-            None: 延时程序，函数返回时代表动作完成
-        """
-        self.__send_serial_msg(mode=MoveMode.rotate, rotation_angle=angle)
-        if angle >= 0:
-            my_logger.info(f"向左转{angle}°")
-        else:
-            my_logger.info(f"向右转 {angle}°")
-
-    def coordinate(self, pre_x, pre_y, tar_x, tar_y) -> None:
-        """
-        控制到指定坐标点
-
-        pre_x:
-            当前小车x坐标,单位为mm
-        pre_y:
-            当前小车y坐标,单位为mm
-        tar_x:
-            目标小车x坐标,单位为mm
-        tar_y:
-            目标小车y坐标,单位为mm
-        """
-        self.__send_serial_msg(mode=MoveMode.coordinate, pre_x=pre_x, pre_y=pre_y, tar_x=tar_x, tar_y=tar_y)
-        my_logger.info(f"当前x坐标为:{pre_x}mm")
-        my_logger.info(f"当前y坐标为:{pre_y}mm")
-        my_logger.info(f"目标x坐标为:{tar_x}mm")
-        my_logger.info(f"目标y坐标为:{tar_y}mm")
+        self.__send_serial_msg(mode=MoveMode.SPEED, moter_1=moter_1, moter_2=moter_2, moter_3=moter_3, moter_4=moter_4)
 
     def clear_buffer(self) -> None:
         """
@@ -269,7 +163,6 @@ class MoveControl:
         """
         self._serial.reset_input_buffer()
         self._serial.reset_output_buffer()
-
 
 if __name__ == '__main__':
     available_ports = list_available_ports()
@@ -302,87 +195,13 @@ if __name__ == '__main__':
         exit(1)
 
     while True:
-        choose = input('请选择模式(M[move]/E[exit]): ').strip().lower()
-        if choose == 'm':
-            while True:
-                choose = input('请选择模式(X[x_move]/Y[y_move]/R[rotate]/C[coordinate]/E[exit]): ').strip().lower()
-                if choose == 'x':
-                    try:
-                        distance = float(input('请输入距离(m): '))
-                        control.move_X(distance=distance)
-                    except ValueError:
-                        print("请输入有效的数字")
-                elif choose == 'y':
-                    try:
-                        distance = float(input('请输入距离(m): '))
-                        control.move_Y(distance=distance)
-                    except ValueError:
-                        print("请输入有效的数字")
-                elif choose == 'r':
-                    try:
-                        angle = int(input('请输入角度°: '))
-                        control.rotate(angle=angle)
-                    except ValueError:
-                        print("请输入有效的整数")
-                elif choose == 'c':
-                    available_ports = list_available_ports()
-                    if not available_ports:
-                        print("没有可用的串口设备，程序退出。")
-                        exit(1)
-
-                    # 提示用户选择一个具体的串口
-                    print("请选择一个UWB串口：")
-                    for idx, port_info in enumerate(available_ports, start=1):
-                        print(f"{idx}. 端口: {port_info['port']}, 描述: {port_info['description']}")
-
-                    try:
-                        choice = int(input("请输入对应的序号: "))
-                        if 1 <= choice <= len(available_ports):
-                            uwb_port = available_ports[choice - 1]['port']
-                        else:
-                            print("无效的选择，程序退出。")
-                            exit(1)
-                    except ValueError:
-                        print("输入无效，程序退出。")
-                        exit(1)
-
-                    uwb_baudrate = 115200
-
-                    try:
-                        coordinate = Coordinate(port=uwb_port, baudrate=uwb_baudrate)
-                    except RuntimeError as e:
-                        my_logger.error(f"串口初始化失败: {e}")
-                        exit(1)
-
-                    # 设置基站坐标和目标物体高度
-                    coordinate.set_base_stations()
-                    coordinate.set_z_target()
-                    
-                    # 读取串口数据
-                    distance = coordinate.read_serial_data()
-                    
-                    # 检查是否成功读取到数据
-                    if distance:
-                        print("基站0-2的距离为：")
-                        print(f"基站0: {distance[0]} mm")
-                        print(f"基站1: {distance[1]} mm")
-                        print(f"基站2: {distance[2]} mm")
-                        print("正在计算坐标...")
-                        coordinates = coordinate.solve_coordinates()
-                        print(f"计算得到的坐标为：x={coordinates[0]} mm, y={coordinates[1]} mm")
-                        # 清空缓存区
-                        pre_x = int(coordinates[0])
-                        pre_y = int(coordinates[1])
-                        tar_x = int(input('请输入目标x坐标: '))
-                        tar_y = int(input('请输入目标y坐标: '))
-                        control.coordinate(pre_x=pre_x, pre_y=pre_y, tar_x=tar_x, tar_y=tar_y)
-                elif choose == 'e':
-                    print('已退出运动选择模式')
-                    break
-                else:
-                    print('请正确选择模式')
-        elif choose == 'e':
-            print('已退出')
-            break
-        else:
-            print('请正确选择模式')
+        try:
+            moter_1 = int(input("请输入电机1的速度 (-32768 ~ 32767): "))
+            moter_2 = int(input("请输入电机2的速度 (-32768 ~ 32767): "))
+            moter_3 = int(input("请输入电机3的速度 (-32768 ~ 32767): "))
+            moter_4 = int(input("请输入电机4的速度 (-32768 ~ 32767): "))
+            control.SPEED(moter_1, moter_2, moter_3, moter_4)
+        except ValueError as e:
+            my_logger.error(f"输入错误: {e}")
+        except Exception as e:
+            my_logger.error(f"发生错误: {e}")

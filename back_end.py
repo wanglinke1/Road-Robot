@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
+from Vision import Camera
 from MoveControl import MoveControl
-from Config import MoveMode
 import serial.tools.list_ports  # 用于列出串口
+import cv2
 
 # 启动后端后，在浏览器中输入如下网址，即可访问前端页面
 # http://127.0.0.1:5000/
@@ -11,10 +12,14 @@ app = Flask(__name__)
 # 初始化 MoveControl 实例
 control = None  # 全局变量，用于存储 MoveControl 实例
 
+# 初始化摄像头实例
+camera = Camera(device=0)
+camera.open()
+
 # 设置静态文件目录
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'Makers.html')
+    return send_from_directory('.', 'index.html')
 
 @app.route('/list_ports', methods=['GET'])
 def list_ports():
@@ -77,6 +82,25 @@ def send_command():
         return jsonify({'message': f'{command} 执行成功'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/video_feed')
+def video_feed():
+    """
+    提供摄像头视频流接口
+    """
+    def generate_frames():
+        while True:
+            ret, frame = camera.cap.read()
+            if not ret:
+                break
+            # 将帧编码为 JPEG 格式
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            # 使用 multipart 格式返回视频流
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
